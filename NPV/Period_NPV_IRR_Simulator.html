@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>투자수익 판단 시뮬레이터 — 회수기간·NPV·IRR</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root{
+    --bg:#0f172a; --panel:#ffffff; --ink:#1e293b; --muted:#64748b;
+    --line:#e2e8f0; --brand:#2563eb; --brand-soft:#eff6ff;
+    --good:#16a34a; --good-soft:#dcfce7; --bad:#dc2626; --bad-soft:#fee2e2;
+    --warn:#d97706; --warn-soft:#fef3c7; --invest:#3b82f6; --return:#22c55e;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:'Malgun Gothic','Apple SD Gothic Neo',system-ui,sans-serif;
+    background:linear-gradient(180deg,#0f172a 0%,#1e293b 280px,#f1f5f9 280px,#f1f5f9 100%);
+    color:var(--ink); line-height:1.6;
+  }
+  .wrap{max-width:1120px; margin:0 auto; padding:32px 20px 80px;}
+  header h1{color:#fff; font-size:26px; margin:0 0 6px;}
+  header p{color:#cbd5e1; margin:0 0 4px; font-size:15px;}
+  .grid{display:grid; grid-template-columns:360px 1fr; gap:20px; margin-top:24px;}
+  @media(max-width:880px){.grid{grid-template-columns:1fr;}}
+  .card{background:var(--panel); border-radius:16px; padding:22px; box-shadow:0 6px 24px rgba(15,23,42,.10);}
+  .card h2{font-size:16px; margin:0 0 16px; display:flex; align-items:center; gap:8px;}
+  label{display:block; font-size:13px; font-weight:600; color:var(--muted); margin:14px 0 6px;}
+  select,input[type=number]{
+    width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:10px;
+    font-size:15px; color:var(--ink); background:#fff;
+  }
+  .slider-row{display:flex; align-items:center; gap:12px;}
+  input[type=range]{flex:1; accent-color:var(--brand);}
+  .val-pill{min-width:78px; text-align:right; font-variant-numeric:tabular-nums; font-weight:700; font-size:14px;}
+  .hint{font-size:12px; color:var(--muted); margin-top:4px;}
+  .year-box{border:1px solid var(--line); border-radius:10px; padding:12px; margin-top:8px;}
+  .year-row{display:grid; grid-template-columns:54px 1fr 90px; align-items:center; gap:8px; margin:7px 0;}
+  .year-row span:first-child{font-size:13px; font-weight:600; color:var(--muted);}
+  .year-row input[type=number]{padding:6px 8px; font-size:13px; text-align:right;}
+
+  /* KPI cards */
+  .kpis{display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-bottom:18px;}
+  @media(max-width:560px){.kpis{grid-template-columns:1fr;}}
+  .kpi{border-radius:14px; padding:16px; border:1px solid var(--line); position:relative; overflow:hidden;}
+  .kpi .name{font-size:13px; color:var(--muted); font-weight:600;}
+  .kpi .num{font-size:28px; font-weight:800; margin:4px 0 2px; font-variant-numeric:tabular-nums;}
+  .kpi .sub{font-size:12px; color:var(--muted);}
+  .kpi .tag{position:absolute; top:14px; right:14px; font-size:11px; font-weight:700; padding:3px 9px; border-radius:999px;}
+  .tag.good{background:var(--good-soft); color:var(--good);}
+  .tag.bad{background:var(--bad-soft); color:var(--bad);}
+  .tag.warn{background:var(--warn-soft); color:var(--warn);}
+
+  .verdict{border-radius:14px; padding:18px 20px; margin-bottom:18px; font-size:15px;}
+  .verdict.good{background:var(--good-soft); border:1px solid #86efac;}
+  .verdict.bad{background:var(--bad-soft); border:1px solid #fca5a5;}
+  .verdict.warn{background:var(--warn-soft); border:1px solid #fcd34d;}
+  .verdict b{font-size:17px;}
+
+  .chart-card{margin-bottom:20px;}
+  canvas{max-height:340px;}
+
+  /* explainer */
+  .explain h3{font-size:15px; margin:18px 0 6px; color:var(--brand);}
+  .explain p{margin:0 0 8px; font-size:14px;}
+  .explain .formula{background:#f8fafc; border-left:3px solid var(--brand); padding:8px 12px; border-radius:6px;
+    font-size:13px; color:#334155; margin:6px 0;}
+  details{margin-top:10px;}
+  summary{cursor:pointer; font-weight:600; color:var(--brand); font-size:14px;}
+  table{width:100%; border-collapse:collapse; margin-top:12px; font-size:13px;}
+  th,td{border:1px solid var(--line); padding:7px 9px; text-align:right;}
+  th{background:#f8fafc; color:var(--muted); font-weight:600;}
+  td:first-child,th:first-child{text-align:left;}
+  .neg{color:var(--bad);} .pos{color:var(--good);}
+  footer{margin-top:30px; font-size:12px; color:var(--muted); text-align:center;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>💰 투자수익 판단 시뮬레이터</h1>
+    <p>회수기간법 · NPV · IRR — 숫자를 바꿔가며 세 지표가 어떻게 달라지는지 직접 확인하세요.</p>
+    <p>초기창업 대표를 위한 "이 투자, 해도 될까?" 의사결정 연습 도구</p>
+  </header>
+
+  <div class="grid">
+    <!-- ============ 입력 패널 ============ -->
+    <div class="card">
+      <h2>⚙️ 입력값</h2>
+
+      <label>① 예시 시나리오 선택</label>
+      <select id="scenario"></select>
+      <div class="hint" id="scenarioDesc"></div>
+
+      <label>② 초기투자금 (0년차, 지금 나가는 돈)</label>
+      <div class="slider-row">
+        <input type="range" id="initRange" min="1000" max="100000" step="1000">
+        <span class="val-pill" id="initVal"></span>
+      </div>
+      <div class="hint">단위: 만원</div>
+
+      <label>③ 할인율 (요구수익률 / 자본비용)</label>
+      <div class="slider-row">
+        <input type="range" id="rateRange" min="0" max="30" step="0.5">
+        <span class="val-pill" id="rateVal"></span>
+      </div>
+      <div class="hint">"이 돈으로 다른 데 투자하면 최소 받고 싶은 연수익률". 보통 8~15%</div>
+
+      <label>④ 사업 기간 (년)</label>
+      <div class="slider-row">
+        <input type="range" id="yearsRange" min="2" max="8" step="1">
+        <span class="val-pill" id="yearsVal"></span>
+      </div>
+
+      <label>⑤ 연도별 순현금흐름 (그 해 들어오는 현금, 만원)</label>
+      <div class="year-box" id="yearBox"></div>
+      <div class="hint">매출이 아니라 비용을 뺀 "남는 현금" 기준</div>
+    </div>
+
+    <!-- ============ 결과 패널 ============ -->
+    <div>
+      <div class="kpis">
+        <div class="kpi" id="kpiPB">
+          <div class="name">회수기간</div>
+          <div class="num" id="pbNum">–</div>
+          <div class="sub">원금이 회수되는 시점</div>
+          <span class="tag" id="pbTag"></span>
+        </div>
+        <div class="kpi" id="kpiNPV">
+          <div class="name">NPV (순현재가치)</div>
+          <div class="num" id="npvNum">–</div>
+          <div class="sub">오늘 돈 가치로 환산한 순이익</div>
+          <span class="tag" id="npvTag"></span>
+        </div>
+        <div class="kpi" id="kpiIRR">
+          <div class="name">IRR (내부수익률)</div>
+          <div class="num" id="irrNum">–</div>
+          <div class="sub">이 투자의 연평균 수익률</div>
+          <span class="tag" id="irrTag"></span>
+        </div>
+      </div>
+
+      <div class="verdict" id="verdict"></div>
+
+      <div class="card chart-card">
+        <h2>📊 연도별 현금흐름 & 누적 회수</h2>
+        <canvas id="chart"></canvas>
+      </div>
+
+      <div class="card explain">
+        <h2>📖 세 지표, 쉽게 이해하기</h2>
+
+        <h3>1. 회수기간법 (Payback Period)</h3>
+        <p>"내가 넣은 돈을 <b>몇 년 만에 다 돌려받나?</b>" 가장 단순하고 직관적인 지표입니다. 누적 현금흐름이 0을 넘는 순간이 회수 시점이에요.</p>
+        <p>👍 쉽고 빠르게 위험을 가늠 / 👎 회수 후의 수익과 '돈의 시간가치'를 무시합니다.</p>
+
+        <h3>2. NPV (순현재가치, Net Present Value)</h3>
+        <p>"미래에 받을 돈을 <b>오늘 가치로 바꿔서</b> 다 더한 뒤, 초기투자를 뺀 값." 1년 뒤 100만원은 지금 100만원보다 가치가 낮죠(할인율로 깎음). 그걸 반영합니다.</p>
+        <div class="formula">NPV = Σ [ 그 해 현금흐름 ÷ (1+할인율)<sup>년수</sup> ] − 초기투자</div>
+        <p>✅ <b>NPV > 0 이면 투자 가치 있음</b> (요구수익률 이상 벌어줌). 가장 신뢰받는 지표입니다.</p>
+
+        <h3>3. IRR (내부수익률, Internal Rate of Return)</h3>
+        <p>"이 사업이 <b>실제로 연 몇 %짜리 투자</b>인가?" 수학적으로는 <b>NPV를 정확히 0으로 만드는 할인율</b>입니다.</p>
+        <div class="formula">판단 기준: IRR > 할인율(요구수익률) → 투자할 만함</div>
+        <p>예금이자·다른 투자기회와 % 단위로 바로 비교할 수 있어 직관적입니다. (단, 현금흐름 부호가 여러 번 바뀌면 IRR이 왜곡될 수 있어요.)</p>
+
+        <details>
+          <summary>🔍 계산 과정 표로 펼쳐 보기 (할인 적용)</summary>
+          <table id="detailTable"></table>
+        </details>
+      </div>
+    </div>
+  </div>
+
+  <footer>입력값은 학습용 예시입니다. 실제 투자 의사결정은 세금·운전자본·리스크 등을 추가로 검토하세요.</footer>
+</div>
+
+<script>
+/* ===================== 시나리오 데이터 ===================== */
+const SCENARIOS = {
+  cafe: {
+    name:"☕ 카페·소매 창업",
+    desc:"인테리어·보증금에 초기투자, 매년 비슷한 영업이익이 들어오는 단순 사례",
+    init:8000, rate:10, years:5, cf:[2500,2800,3000,3000,3200]
+  },
+  factory: {
+    name:"🏭 제조·설비 투자",
+    desc:"설비투자가 크고 회수가 느린 사례 — 회수기간과 NPV의 차이를 비교하기 좋음",
+    init:50000, rate:12, years:7, cf:[6000,9000,12000,13000,14000,14000,14000]
+  },
+  saas: {
+    name:"📱 앱·SaaS 스타트업",
+    desc:"초기 적자 후 매출이 급성장(현금흐름이 뒤로 갈수록 커짐) — IRR의 의미를 보기 좋음",
+    init:15000, rate:15, years:6, cf:[-3000,2000,6000,11000,16000,22000]
+  },
+  blank: {
+    name:"📝 범용 (빈 템플릿)",
+    desc:"업종 없이 숫자를 자유롭게 넣어 직접 실험해 보세요",
+    init:10000, rate:10, years:5, cf:[0,0,0,0,0]
+  }
+};
+
+/* ===================== 재무 계산 함수 ===================== */
+function npv(rate, init, cf){
+  let v = -init;
+  for(let t=0; t<cf.length; t++){ v += cf[t] / Math.pow(1+rate, t+1); }
+  return v;
+}
+// IRR: 이분법(bisection)으로 NPV=0 이 되는 할인율 탐색
+function irr(init, cf){
+  const f = r => npv(r, init, cf);
+  let lo = -0.9999, hi = 10; // -99.99% ~ 1000%
+  let flo = f(lo), fhi = f(hi);
+  if(flo * fhi > 0) return null; // 부호 안 바뀌면 유일 해 없음 → 표시 안 함
+  for(let i=0;i<200;i++){
+    const mid = (lo+hi)/2, fm = f(mid);
+    if(Math.abs(fm) < 1e-6) return mid;
+    if(flo * fm < 0){ hi = mid; fhi = fm; } else { lo = mid; flo = fm; }
+  }
+  return (lo+hi)/2;
+}
+// 회수기간: 누적 현금흐름이 0을 넘는 시점(연 단위 보간)
+function payback(init, cf){
+  let cum = -init;
+  for(let t=0; t<cf.length; t++){
+    const prev = cum;
+    cum += cf[t];
+    if(cum >= 0){
+      const need = -prev;            // 그 해 시작 시점에 남은 미회수액
+      const frac = cf[t] > 0 ? need/cf[t] : 0;
+      return t + frac;               // 예: 2.4년
+    }
+  }
+  return null; // 기간 내 미회수
+}
+
+/* ===================== 포맷 / 상태 ===================== */
+const won = n => (Math.round(n)).toLocaleString('ko-KR') + "만원";
+let chart;
+const S = { init:10000, rate:10, years:5, cf:[] };
+
+/* ===================== UI 구성 ===================== */
+const scenarioSel = document.getElementById('scenario');
+Object.keys(SCENARIOS).forEach(k=>{
+  const o=document.createElement('option'); o.value=k; o.textContent=SCENARIOS[k].name; scenarioSel.appendChild(o);
+});
+
+function loadScenario(key){
+  const s = SCENARIOS[key];
+  S.init=s.init; S.rate=s.rate; S.years=s.years; S.cf=s.cf.slice(0,s.years);
+  document.getElementById('scenarioDesc').textContent = s.desc;
+  document.getElementById('initRange').value = S.init;
+  document.getElementById('rateRange').value = S.rate;
+  document.getElementById('yearsRange').value = S.years;
+  buildYearInputs();
+  syncPills(); recompute();
+}
+
+function buildYearInputs(){
+  const box = document.getElementById('yearBox');
+  box.innerHTML='';
+  for(let t=0;t<S.years;t++){
+    const row=document.createElement('div'); row.className='year-row';
+    const lab=document.createElement('span'); lab.textContent=(t+1)+'년차';
+    const rng=document.createElement('input'); rng.type='range'; rng.min=-20000; rng.max=40000; rng.step=500;
+    rng.value=S.cf[t]??0;
+    const num=document.createElement('input'); num.type='number'; num.step=100; num.value=S.cf[t]??0;
+    rng.addEventListener('input',()=>{ S.cf[t]=+rng.value; num.value=rng.value; recompute(); });
+    num.addEventListener('input',()=>{ S.cf[t]=+num.value||0; rng.value=S.cf[t]; recompute(); });
+    row.append(lab,rng,num); box.appendChild(row);
+  }
+}
+
+function syncPills(){
+  document.getElementById('initVal').textContent = won(S.init);
+  document.getElementById('rateVal').textContent = S.rate.toFixed(1)+'%';
+  document.getElementById('yearsVal').textContent = S.years+'년';
+}
+
+/* 입력 이벤트 */
+document.getElementById('initRange').addEventListener('input',e=>{S.init=+e.target.value; syncPills(); recompute();});
+document.getElementById('rateRange').addEventListener('input',e=>{S.rate=+e.target.value; syncPills(); recompute();});
+document.getElementById('yearsRange').addEventListener('input',e=>{
+  const n=+e.target.value;
+  if(n>S.years){ for(let i=S.years;i<n;i++) S.cf[i]=S.cf[i]??0; }
+  else S.cf=S.cf.slice(0,n);
+  S.years=n; syncPills(); buildYearInputs(); recompute();
+});
+scenarioSel.addEventListener('change',e=>loadScenario(e.target.value));
+
+/* ===================== 핵심: 재계산 & 렌더 ===================== */
+function recompute(){
+  const r = S.rate/100;
+  const cf = S.cf.slice(0,S.years).map(x=>+x||0);
+  const _npv = npv(r, S.init, cf);
+  const _irr = irr(S.init, cf);
+  const _pb  = payback(S.init, cf);
+
+  // --- KPI: 회수기간 ---
+  const pbNum=document.getElementById('pbNum'), pbTag=document.getElementById('pbTag');
+  if(_pb===null){ pbNum.textContent='미회수'; pbNum.style.color='var(--bad)'; setTag(pbTag,'bad','기간 내 ✗'); }
+  else { pbNum.textContent=_pb.toFixed(1)+'년';
+    const half=S.years/2;
+    if(_pb<=half){ pbNum.style.color='var(--good)'; setTag(pbTag,'good','빠름'); }
+    else { pbNum.style.color='var(--warn)'; setTag(pbTag,'warn','다소 김'); } }
+
+  // --- KPI: NPV ---
+  const npvNum=document.getElementById('npvNum'), npvTag=document.getElementById('npvTag');
+  npvNum.textContent=won(_npv);
+  npvNum.style.color = _npv>=0?'var(--good)':'var(--bad)';
+  if(_npv>0) setTag(npvTag,'good','투자가치 ○'); else if(_npv<0) setTag(npvTag,'bad','가치없음 ✗'); else setTag(npvTag,'warn','손익분기');
+
+  // --- KPI: IRR ---
+  const irrNum=document.getElementById('irrNum'), irrTag=document.getElementById('irrTag');
+  if(_irr===null){ irrNum.textContent='계산불가'; irrNum.style.color='var(--muted)'; setTag(irrTag,'warn','—'); }
+  else{
+    irrNum.textContent=(_irr*100).toFixed(1)+'%';
+    irrNum.style.color = _irr>=r?'var(--good)':'var(--bad)';
+    if(_irr>r) setTag(irrTag,'good','할인율 초과'); else setTag(irrTag,'bad','할인율 미달');
+  }
+
+  renderVerdict(_npv,_irr,_pb,r);
+  renderChart(cf);
+  renderTable(cf,r);
+}
+
+function setTag(el,cls,txt){ el.className='tag '+cls; el.textContent=txt; }
+
+function renderVerdict(_npv,_irr,_pb,r){
+  const v=document.getElementById('verdict');
+  let cls,msg;
+  if(_npv>0 && _irr!==null && _irr>r){
+    cls='good';
+    msg=`<b>✅ 투자할 만한 사업입니다.</b><br>오늘 가치로 <b>${won(_npv)}</b>의 순이익이 기대되고, 이 투자의 실제 수익률(IRR ${(_irr*100).toFixed(1)}%)이 요구수익률(${S.rate}%)을 넘습니다.${_pb!==null?` 원금은 약 <b>${_pb.toFixed(1)}년</b> 만에 회수됩니다.`:''}`;
+  } else if(_npv<0){
+    cls='bad';
+    msg=`<b>⚠️ 지금 조건으로는 투자 매력이 낮습니다.</b><br>NPV가 <b>${won(_npv)}</b>로 마이너스입니다. 요구수익률 ${S.rate}%를 채우지 못해, 같은 돈을 다른 곳에 두는 편이 낫다는 뜻이에요. 현금흐름을 키우거나 초기투자·할인율을 낮춰 보세요.`;
+  } else {
+    cls='warn';
+    msg=`<b>🤔 손익분기 부근입니다.</b><br>NPV가 0에 가까워 요구수익률을 겨우 맞추는 수준입니다. 가정이 조금만 어긋나도 결과가 뒤집힐 수 있으니 보수적으로 판단하세요.`;
+  }
+  v.className='verdict '+cls; v.innerHTML=msg;
+}
+
+function renderChart(cf){
+  const labels=['0년차(투자)']; const bar=[-S.init];
+  let cum=-S.init; const line=[cum];
+  for(let t=0;t<cf.length;t++){ labels.push((t+1)+'년차'); bar.push(cf[t]); cum+=cf[t]; line.push(cum); }
+  const ctx=document.getElementById('chart');
+  const data={
+    labels,
+    datasets:[
+      {type:'bar', label:'연도별 현금흐름', data:bar, order:2,
+        backgroundColor:bar.map(x=>x<0?'rgba(239,68,68,.75)':'rgba(59,130,246,.75)'),
+        borderRadius:5},
+      {type:'line', label:'누적 현금흐름(회수)', data:line, order:1,
+        borderColor:'#16a34a', backgroundColor:'#16a34a', tension:.25,
+        pointRadius:4, pointBackgroundColor:line.map(x=>x>=0?'#16a34a':'#dc2626'), borderWidth:2}
+    ]
+  };
+  const opts={
+    responsive:true, maintainAspectRatio:true,
+    plugins:{
+      legend:{position:'top'},
+      tooltip:{callbacks:{label:c=>c.dataset.label+': '+won(c.parsed.y)}},
+      annotation:false
+    },
+    scales:{ y:{ title:{display:true,text:'만원'},
+      grid:{color:c=>c.tick.value===0?'#94a3b8':'#f1f5f9', lineWidth:c=>c.tick.value===0?2:1},
+      ticks:{callback:v=>v.toLocaleString('ko-KR')} } }
+  };
+  if(chart){ chart.data=data; chart.options=opts; chart.update(); }
+  else chart=new Chart(ctx,{data,options:opts});
+}
+
+function renderTable(cf,r){
+  const t=document.getElementById('detailTable');
+  let cum=-S.init;
+  let rows=`<tr><th>시점</th><th>현금흐름</th><th>할인계수<br>1/(1+r)ⁿ</th><th>현재가치(PV)</th><th>누적 현금흐름</th></tr>`;
+  rows+=`<tr><td>0년차</td><td class="neg">${won(-S.init)}</td><td>1.000</td><td class="neg">${won(-S.init)}</td><td class="neg">${won(cum)}</td></tr>`;
+  for(let i=0;i<cf.length;i++){
+    const df=1/Math.pow(1+r,i+1); const pv=cf[i]*df; cum+=cf[i];
+    rows+=`<tr><td>${i+1}년차</td><td class="${cf[i]<0?'neg':'pos'}">${won(cf[i])}</td><td>${df.toFixed(3)}</td><td>${won(pv)}</td><td class="${cum<0?'neg':'pos'}">${won(cum)}</td></tr>`;
+  }
+  t.innerHTML=rows;
+}
+
+/* ===================== 시작 ===================== */
+loadScenario('cafe');
+</script>
+</body>
+</html>
