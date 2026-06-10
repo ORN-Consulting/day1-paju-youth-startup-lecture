@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BEP 손익분기점 시뮬레이터</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root{
+    --bg:#0f172a; --panel:#1e293b; --panel2:#273449; --line:#334155;
+    --txt:#e2e8f0; --muted:#94a3b8; --accent:#38bdf8;
+    --revenue:#22c55e; --cost:#f87171; --fixed:#fbbf24;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Segoe UI','Malgun Gothic',sans-serif;background:var(--bg);color:var(--txt);height:100vh;overflow:hidden}
+  .app{display:grid;grid-template-columns:400px 1fr;height:100vh}
+  /* ===== Sidebar ===== */
+  .sidebar{background:var(--panel);border-right:1px solid var(--line);padding:20px;overflow-y:auto}
+  .sidebar h1{font-size:18px;margin-bottom:4px;color:#fff}
+  .sidebar .sub{font-size:12px;color:var(--muted);margin-bottom:20px;line-height:1.5}
+  .group{background:var(--panel2);border-radius:12px;padding:16px;margin-bottom:16px;border:1px solid var(--line)}
+  .group-title{font-size:13px;font-weight:700;margin-bottom:12px;display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none}
+  .group-title .caret{margin-left:auto;font-size:12px;color:var(--muted);transition:transform .15s}
+  .group-title.collapsed .caret{transform:rotate(-90deg)}
+  .dot{width:10px;height:10px;border-radius:50%}
+  .items.collapsed{display:none}
+  .cost-row{display:grid;grid-template-columns:1fr 130px;align-items:center;gap:10px;margin-bottom:8px}
+  .cost-row label{font-size:13px;color:var(--txt)}
+  .cost-row.special label{color:var(--accent);font-weight:700}
+  input[type=text]{width:100%;background:var(--bg);border:1px solid var(--line);color:var(--txt);
+    border-radius:8px;padding:8px 10px;font-size:14px;outline:none;font-variant-numeric:tabular-nums;text-align:right}
+  input[type=text]:focus{border-color:var(--accent)}
+  .unit{font-size:11px;color:var(--muted)}
+  .total{display:flex;justify-content:space-between;font-size:14px;font-weight:700;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
+  .slider-wrap{margin-top:14px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px}
+  .slider-wrap .sl-label{display:flex;justify-content:space-between;font-size:12px;margin-bottom:8px}
+  .sl-label b{color:var(--accent);font-variant-numeric:tabular-nums}
+  input[type=range]{width:100%;accent-color:var(--accent);height:6px}
+  .hint{font-size:11px;color:var(--muted);margin-top:6px;line-height:1.5}
+  button.reset{width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--txt);
+    padding:10px;border-radius:8px;font-size:13px;cursor:pointer;margin-top:4px}
+  button.reset:hover{border-color:var(--accent);color:var(--accent)}
+  /* ===== Main ===== */
+  .main{padding:24px 28px;overflow-y:auto;display:flex;flex-direction:column;gap:18px}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+  .kpi{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
+  .kpi .k-label{font-size:12px;color:var(--muted);margin-bottom:6px}
+  .kpi .k-val{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums}
+  .kpi .k-unit{font-size:12px;color:var(--muted);margin-left:3px;font-weight:400}
+  .chart-card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;flex:1;min-height:0;display:flex;flex-direction:column}
+  .chart-head{display:flex;align-items:center;gap:10px;margin-bottom:4px}
+  .chart-head h2{font-size:15px}
+  .chart-head button{margin-left:auto;background:var(--panel2);border:1px solid var(--line);color:var(--accent);
+    padding:6px 12px;border-radius:8px;font-size:12px;cursor:pointer}
+  .chart-head button:hover{border-color:var(--accent)}
+  .chart-card .note{font-size:12px;color:var(--muted);margin-bottom:12px}
+  .canvas-box{position:relative;flex:1;min-height:340px}
+  .legend-tip{font-size:11px;color:var(--muted);margin-top:8px}
+  .accent{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- ============ LEFT SIDEBAR ============ -->
+  <aside class="sidebar">
+    <h1>BEP 시뮬레이터</h1>
+    <div class="sub">판매단가는 <b>원</b>, 비용은 <b>만원</b> 단위입니다. 비용을 입력하고, 기타 항목은 슬라이더로 시뮬레이션하세요. 패널 제목을 클릭하면 접을 수 있습니다.</div>
+
+    <!-- 판매 단가 -->
+    <div class="group">
+      <div class="group-title" data-toggle="priceItems"><span class="dot" style="background:var(--accent)"></span>판매 단가 <span class="unit">(원)</span><span class="caret">▾</span></div>
+      <div class="items" id="priceItems">
+        <div class="cost-row"><label>제품 1개당 판매가격</label><input type="text" id="price" inputmode="decimal"></div>
+      </div>
+    </div>
+
+    <!-- 고정비 -->
+    <div class="group">
+      <div class="group-title" data-toggle="fixedItems"><span class="dot" style="background:var(--fixed)"></span>고정비 <span class="unit">(월, 만원)</span><span class="caret">▾</span></div>
+      <div class="items" id="fixedItems"></div>
+      <div class="total"><span>고정비 합계</span><span><span id="fixedTotal" class="accent"></span> 만원</span></div>
+      <div class="slider-wrap">
+        <div class="sl-label"><span>기타 고정비 조정</span><b id="fixedSliderVal"></b></div>
+        <input type="range" id="fixedSlider" min="0" max="500" step="5" value="70">
+        <div class="hint">슬라이더는 <b>기타 고정비</b>만 조정하며, 최대값은 입력된 다른 고정비 합계의 <b>75%</b>입니다. (패널을 접어도 작동)</div>
+      </div>
+    </div>
+
+    <!-- 변동비 -->
+    <div class="group">
+      <div class="group-title" data-toggle="varItems"><span class="dot" style="background:var(--cost)"></span>단위당 변동비 <span class="unit">(1개당, 만원)</span><span class="caret">▾</span></div>
+      <div class="items" id="varItems"></div>
+      <div class="total"><span>단위당 변동비 합계</span><span><span id="varTotal" class="accent"></span> 만원</span></div>
+      <div class="slider-wrap">
+        <div class="sl-label"><span>기타 변동비 조정</span><b id="varSliderVal"></b></div>
+        <input type="range" id="varSlider" min="0" max="1" step="0.01" value="0.1">
+        <div class="hint">슬라이더는 <b>기타 변동비</b>만 조정하며, 최대값은 개당 판매단가의 <b>120%</b>입니다. (패널을 접어도 작동)</div>
+      </div>
+    </div>
+
+    <button class="reset" id="resetBtn">기본값으로 초기화</button>
+  </aside>
+
+  <!-- ============ MAIN ============ -->
+  <main class="main">
+    <div class="kpis">
+      <div class="kpi"><div class="k-label">손익분기 판매수량</div><div class="k-val"><span id="kpiQty">0</span><span class="k-unit">개</span></div></div>
+      <div class="kpi"><div class="k-label">손익분기 매출액</div><div class="k-val"><span id="kpiSales">0</span><span class="k-unit">만원</span></div></div>
+      <div class="kpi"><div class="k-label">단위당 공헌이익</div><div class="k-val"><span id="kpiCm">0</span><span class="k-unit">만원</span></div></div>
+      <div class="kpi"><div class="k-label">공헌이익률</div><div class="k-val"><span id="kpiCmr">0</span><span class="k-unit">%</span></div></div>
+    </div>
+
+    <div class="chart-card">
+      <div class="chart-head">
+        <h2>BEP 차트 <span style="font-size:12px;color:var(--muted)">(매출 vs 총비용)</span></h2>
+        <button id="rescaleBtn">현재 값 기준으로 축 맞춤</button>
+      </div>
+      <div class="note">교차점이 손익분기점(BEP)이며, 파란 수직선이 x축과 만나는 곳이 BEP 판매수량입니다. 축은 고정되어 있어 비용을 바꾸면 BEP 점의 이동이 보입니다.</div>
+      <div class="canvas-box"><canvas id="bepChart"></canvas></div>
+      <div class="legend-tip">● 매출선 · ● 총비용선 · ● 고정비선 · │ BEP 수직선 — 교차점 왼쪽은 손실(적자), 오른쪽은 이익(흑자) 구간입니다.</div>
+    </div>
+  </main>
+</div>
+
+<script>
+// 모든 금액 단위 = 만원
+const DEFAULT_FIXED = [
+  {name:"임대료",        val:300, special:false},
+  {name:"인건비",        val:500, special:false},
+  {name:"감가상각비",    val:80,  special:false},
+  {name:"보험료",        val:30,  special:false},
+  {name:"광고·마케팅비", val:120, special:false},
+  {name:"기타 고정비",   val:70,  special:true},
+];
+const DEFAULT_VAR = [
+  {name:"재료비",      val:0.6,  special:false},
+  {name:"노무비",      val:0.15, special:false},
+  {name:"포장비",      val:0.08, special:false},
+  {name:"배송비",      val:0.15, special:false},
+  {name:"기타 변동비", val:0.1,  special:true},
+];
+const DEFAULT_PRICE = 20000; // 원 (내부 계산 시 만원으로 환산)
+
+let fixed = DEFAULT_FIXED.map(o=>({...o}));
+let vars  = DEFAULT_VAR.map(o=>({...o}));
+let axisX = 0, axisY = 0;   // 고정된 축 최대값
+
+const $=id=>document.getElementById(id);
+// 콤마 + 소수 포맷
+const fmt=(n,dec=0)=>Number(n).toLocaleString('ko-KR',{minimumFractionDigits:dec,maximumFractionDigits:dec});
+const fmtAuto=n=> (Number.isInteger(n)?fmt(n,0):fmt(n,2));
+const parseNum=s=>{const v=parseFloat(String(s).replace(/,/g,''));return isNaN(v)?0:v;};
+const fixedTotal=()=>fixed.reduce((s,o)=>s+(+o.val||0),0);
+const varTotal =()=>vars.reduce((s,o)=>s+(+o.val||0),0);
+const special=list=>list.find(o=>o.special);
+
+// ===== 입력행 생성 =====
+function buildRows(list,containerId){
+  const c=$(containerId);c.innerHTML='';
+  list.forEach((o,i)=>{
+    const row=document.createElement('div');
+    row.className='cost-row'+(o.special?' special':'');
+    row.innerHTML=`<label>${o.name}</label><input type="text" inputmode="decimal" data-i="${i}" value="${fmtAuto(o.val)}">`;
+    c.appendChild(row);
+    const inp=row.querySelector('input');
+    inp.addEventListener('input',e=>{list[i].val=parseNum(e.target.value);if(list[i].special)syncSliderLabels();update();});
+    inp.addEventListener('blur',e=>{e.target.value=fmtAuto(list[i].val);});
+  });
+}
+function refreshInputs(list,containerId){
+  const inps=$(containerId).querySelectorAll('input');
+  list.forEach((o,i)=>{ if(inps[i] && document.activeElement!==inps[i]) inps[i].value=fmtAuto(o.val); });
+}
+// 가격: 입력은 원, 계산은 만원
+const priceWon=()=>parseNum($('price').value);
+const priceManwon=()=>priceWon()/10000;
+
+// 슬라이더 동적 범위: 고정비=다른 고정비 합계의 75%, 변동비=개당 단가의 120%
+function updateSliderRanges(){
+  const fnon=fixed.filter(o=>!o.special).reduce((s,o)=>s+(+o.val||0),0);
+  const fmax=Math.max(5,Math.round(fnon*0.75));
+  const fs=$('fixedSlider'); fs.max=fmax; fs.step=fmax>=200?5:1;
+  if(special(fixed).val>fmax) special(fixed).val=fmax;
+
+  const vmax=Math.max(0.05,+(priceManwon()*1.2).toFixed(2));
+  const vs=$('varSlider'); vs.max=vmax; vs.step=0.01;
+  if(special(vars).val>vmax) special(vars).val=vmax;
+}
+function syncSliderLabels(){
+  updateSliderRanges();
+  $('fixedSlider').value=special(fixed).val;
+  $('varSlider').value=special(vars).val;
+  $('fixedSliderVal').textContent=fmtAuto(special(fixed).val)+' 만원';
+  $('varSliderVal').textContent=fmtAuto(special(vars).val)+' 만원';
+}
+
+// ===== 차트 (linear x축) =====
+let chart;
+function roundRect(c,x,y,w,h,r){c.beginPath();c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath();}
+// BEP x절편 값을 x축 위에 항상 표시
+const bepLabelPlugin={id:'bepLabel',afterDatasetsDraw(ch){
+  const bep=ch.$bepQty; if(!isFinite(bep)) return;
+  const ctx=ch.ctx, {left,right,bottom}=ch.chartArea, xs=ch.scales.x;
+  let px=xs.getPixelForValue(bep);
+  const off= px<left||px>right;
+  px=Math.min(right,Math.max(left,px));
+  ctx.save();
+  ctx.font='bold 12px "Segoe UI","Malgun Gothic",sans-serif';
+  const text='BEP '+Math.ceil(bep).toLocaleString('ko-KR')+'개'+(off?' →':'');
+  const w=ctx.measureText(text).width+14, h=20;
+  let bx=Math.min(right-w,Math.max(left,px-w/2)), by=bottom-h-4;
+  ctx.fillStyle='rgba(56,189,248,0.18)'; ctx.strokeStyle='#38bdf8'; ctx.lineWidth=1;
+  roundRect(ctx,bx,by,w,h,5); ctx.fill(); ctx.stroke();
+  ctx.fillStyle='#7dd3fc'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText(text,bx+w/2,by+h/2);
+  ctx.restore();
+}};
+function buildChart(){
+  const ctx=$('bepChart').getContext('2d');
+  chart=new Chart(ctx,{type:'line',plugins:[bepLabelPlugin],
+    data:{datasets:[
+      {label:'매출',data:[],borderColor:'#22c55e',borderWidth:2.5,pointRadius:0,fill:false,tension:0},
+      {label:'총비용',data:[],borderColor:'#f87171',borderWidth:2.5,pointRadius:0,fill:false,tension:0},
+      {label:'고정비',data:[],borderColor:'#fbbf24',borderWidth:1.5,borderDash:[6,4],pointRadius:0,fill:false,tension:0},
+      {label:'BEP 수직선',data:[],borderColor:'#38bdf8',borderWidth:1.5,borderDash:[4,3],pointRadius:0,fill:false,tension:0},
+      {label:'BEP',data:[],borderColor:'#38bdf8',backgroundColor:'#38bdf8',pointRadius:6,pointHoverRadius:8,showLine:false},
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'nearest',intersect:false},
+      plugins:{legend:{labels:{color:'#cbd5e1',usePointStyle:true,boxWidth:8,filter:i=>i.text!=='BEP 수직선'}},
+        tooltip:{callbacks:{label:c=>c.dataset.label+': '+fmt(c.parsed.y,0)+'만원 ('+fmt(c.parsed.x,0)+'개)'}}},
+      scales:{
+        x:{type:'linear',min:0,title:{display:true,text:'판매수량 (개)',color:'#94a3b8'},ticks:{color:'#94a3b8',maxTicksLimit:10},grid:{color:'#1e293b'}},
+        y:{type:'linear',min:0,title:{display:true,text:'금액 (만원)',color:'#94a3b8'},ticks:{color:'#94a3b8',callback:v=>fmt(v,0)},grid:{color:'#1e293b'}}}
+    }});
+}
+
+// 현재 값 기준으로 축 최대값 재설정 (BEP 중앙 배치)
+function computeAxis(){
+  const price=priceManwon();
+  const FT=fixedTotal(),VC=varTotal(),cm=price-VC;
+  const bep=cm>0?FT/cm:1000;
+  axisX=Math.max(10,Math.ceil(bep*2/10)*10);
+  axisY=Math.max(10,Math.ceil(axisX*price/10)*10);
+  chart.options.scales.x.max=axisX;
+  chart.options.scales.y.max=axisY;
+}
+
+function update(){
+  const price=priceManwon();
+  const FT=fixedTotal(),VC=varTotal();
+  const cm=price-VC, cmr=price>0?cm/price*100:0;
+  const bepQty=cm>0?FT/cm:Infinity, bepSales=bepQty*price;
+
+  $('kpiQty').textContent=isFinite(bepQty)?fmt(Math.ceil(bepQty),0):'∞';
+  $('kpiSales').textContent=isFinite(bepSales)?fmt(Math.round(bepSales),0):'∞';
+  $('kpiCm').textContent=fmtAuto(cm);
+  $('kpiCmr').textContent=cmr.toFixed(1);
+
+  // 직선은 양 끝 2점만 (축은 고정)
+  const X=axisX;
+  chart.data.datasets[0].data=[{x:0,y:0},{x:X,y:X*price}];
+  chart.data.datasets[1].data=[{x:0,y:FT},{x:X,y:FT+X*VC}];
+  chart.data.datasets[2].data=[{x:0,y:FT},{x:X,y:FT}];
+  if(isFinite(bepQty)){
+    chart.data.datasets[3].data=[{x:bepQty,y:0},{x:bepQty,y:bepSales}]; // 수직선
+    chart.data.datasets[4].data=[{x:bepQty,y:bepSales}];                 // BEP점
+  }else{chart.data.datasets[3].data=[];chart.data.datasets[4].data=[];}
+  chart.$bepQty=bepQty;
+  chart.update('none');
+
+  // 슬라이더 최대범위 갱신(가격/고정비 변동 반영) + 클램프 결과 동기화
+  updateSliderRanges();
+  $('fixedSlider').value=special(fixed).val;
+  $('varSlider').value=special(vars).val;
+  $('fixedSliderVal').textContent=fmtAuto(special(fixed).val)+' 만원';
+  $('varSliderVal').textContent=fmtAuto(special(vars).val)+' 만원';
+  refreshInputs(fixed,'fixedItems');
+  refreshInputs(vars,'varItems');
+
+  $('fixedTotal').textContent=fmt(FT,0);
+  $('varTotal').textContent=fmtAuto(VC);
+}
+
+function init(){
+  $('price').value=fmtAuto(DEFAULT_PRICE);
+  buildRows(fixed,'fixedItems');
+  buildRows(vars,'varItems');
+  buildChart();
+  computeAxis();
+
+  $('price').addEventListener('input',update);
+  $('price').addEventListener('blur',e=>e.target.value=fmtAuto(parseNum(e.target.value)));
+
+  $('fixedSlider').addEventListener('input',e=>{special(fixed).val=+e.target.value;$('fixedSliderVal').textContent=fmtAuto(+e.target.value)+' 만원';refreshInputs(fixed,'fixedItems');update();});
+  $('varSlider').addEventListener('input',e=>{special(vars).val=+e.target.value;$('varSliderVal').textContent=fmtAuto(+e.target.value)+' 만원';refreshInputs(vars,'varItems');update();});
+
+  // 접기/펴기
+  document.querySelectorAll('.group-title[data-toggle]').forEach(t=>{
+    t.addEventListener('click',()=>{t.classList.toggle('collapsed');$(t.dataset.toggle).classList.toggle('collapsed');});
+  });
+
+  $('rescaleBtn').addEventListener('click',()=>{computeAxis();update();});
+
+  $('resetBtn').addEventListener('click',()=>{
+    fixed=DEFAULT_FIXED.map(o=>({...o}));
+    vars=DEFAULT_VAR.map(o=>({...o}));
+    $('price').value=fmtAuto(DEFAULT_PRICE);
+    buildRows(fixed,'fixedItems');buildRows(vars,'varItems');
+    syncSliderLabels();computeAxis();update();
+  });
+
+  syncSliderLabels();
+  update();
+}
+init();
+</script>
+</body>
+</html>
